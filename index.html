@@ -1,6 +1,107 @@
 <!DOCTYPE html>
 <html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Ultra-Realistic Glass & Water</title>
+  <style>
+    body { margin: 0; overflow: hidden; }
+    canvas { display: block; }
+  </style>
+</head>
 <body>
+<script type="module">
+  console.log('Debug: Starting module execution');
+  try {
+    import * as THREE from 'https://unpkg.com/three@0.160.0/build/three.module.js';
+    import { OrbitControls } from 'https://unpkg.com/three@0.160.0/examples/jsm/controls/OrbitControls.js';
+    import { Sky } from 'https://unpkg.com/three@0.160.0/examples/jsm/objects/Sky.js';
+    import { Water } from 'https://unpkg.com/three@0.160.0/examples/jsm/objects/Water.js';
+    import { EffectComposer } from 'https://unpkg.com/three@0.160.0/examples/jsm/postprocessing/EffectComposer.js';
+    import { RenderPass } from 'https://unpkg.com/three@0.160.0/examples/jsm/postprocessing/RenderPass.js';
+    import { UnrealBloomPass } from 'https://unpkg.com/three@0.160.0/examples/jsm/postprocessing/UnrealBloomPass.js';
+    import { ShaderPass } from 'https://unpkg.com/three@0.160.0/examples/jsm/postprocessing/ShaderPass.js';
+    import { RGBShiftShader } from 'https://unpkg.com/three@0.160.0/examples/jsm/shaders/RGBShiftShader.js';
+    import GUI from 'https://unpkg.com/lil-gui@0.19.2/dist/lil-gui.esm.js';
+    console.log('Debug: Modules loaded successfully');
+
+    // --- Scene Setup ---
+    const scene = new THREE.Scene();
+    console.log('Debug: Scene created');
+    const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
+    camera.position.set(0, 2, 5);
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setPixelRatio(window.devicePixelRatio);
+    document.body.appendChild(renderer.domElement);
+    console.log('Debug: Renderer initialized');
+
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    console.log('Debug: OrbitControls initialized');
+
+    // Additional debug messages throughout the setup
+    console.log('Debug: Initializing Sky');
+    const sky = new Sky();
+    sky.scale.setScalar(10000);
+    scene.add(sky);
+    console.log('Debug: Sky added');
+
+    console.log('Debug: Initializing Water');
+    const waterGeometry = new THREE.PlaneGeometry(100, 100);
+    const water = new Water(waterGeometry, {
+      textureWidth: 512,
+      textureHeight: 512,
+      waterNormals: new THREE.TextureLoader().load('https://threejs.org/examples/textures/waternormals.jpg', texture => { texture.wrapS = texture.wrapT = THREE.RepeatWrapping; console.log('Debug: Water normals loaded'); }),
+      sunDirection: new THREE.Vector3(),
+      sunColor: 0xffffff,
+      waterColor: 0x001e0f,
+      distortionScale: 3.7,
+      fog: scene.fog !== undefined
+    });
+    water.rotation.x = -Math.PI / 2;
+    scene.add(water);
+    console.log('Debug: Water added');
+
+    console.log('Debug: Initializing Glass');
+    const glassGeometry = new THREE.SphereGeometry(1, 64, 64);
+    const glassMaterial = new THREE.MeshPhysicalMaterial({ transmission: 1.0, thickness: 0.5, roughness: 0.05, metalness: 0, ior: 1.52, reflectivity: 0.9, clearcoat: 1.0, clearcoatRoughness: 0.1 });
+    const glassMesh = new THREE.Mesh(glassGeometry, glassMaterial);
+    glassMesh.position.y = 1;
+    scene.add(glassMesh);
+    console.log('Debug: Glass mesh added');
+
+    console.log('Debug: Setting up post-processing');
+    const composer = new EffectComposer(renderer);
+    composer.addPass(new RenderPass(scene, camera));
+    const bloomPass = new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 0.3, 0.4, 0.85);
+    composer.addPass(bloomPass);
+    const rgbShiftPass = new ShaderPass(RGBShiftShader);
+    rgbShiftPass.uniforms['amount'].value = 0.0015;
+    composer.addPass(rgbShiftPass);
+    console.log('Debug: Post-processing set up');
+
+    window.addEventListener('resize', () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+      composer.setSize(window.innerWidth, window.innerHeight);
+      console.log('Debug: Window resized');
+    });
+
+    function animate() {
+      requestAnimationFrame(animate);
+      water.material.uniforms["time"].value += 1.0 / 60.0;
+      controls.update();
+      composer.render();
+    }
+    animate();
+    console.log('Debug: Animation loop started');
+
+  } catch (e) {
+    console.error('Debug: Module failed to load or execute:', e);
+  }
+</script>
 </body>
 </html>
-
