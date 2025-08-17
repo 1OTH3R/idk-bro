@@ -1,315 +1,115 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Ultra‑Realistic Glass & Water — three.js</title>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Ultra-Realistic Glass & Water</title>
   <style>
-    html, body { height: 100%; margin: 0; background:#0b0e12; }
-    #app { position: fixed; inset: 0; }
-    .overlay { position: fixed; left: 12px; bottom: 12px; padding: 8px 10px; font: 12px/1.4 system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, sans-serif; color:#c9d6e3; background: #0b0e12cc; border: 1px solid #1b2330; border-radius: 10px; backdrop-filter: blur(6px); user-select:none }
-    .overlay b { color:#fff }
-    .overlay kbd { background:#121826; border:1px solid #2a3548; border-bottom-width:2px; border-radius:6px; padding:1px 6px; font-weight:600; }
+    body { margin: 0; overflow: hidden; }
+    canvas { display: block; }
   </style>
 </head>
 <body>
-  <div id="app"></div>
-  <div class="overlay">
-    <div><b>Ultra‑Realistic Glass & Water</b> (three.js)</div>
-    <div>Drag = orbit • <kbd>Shift</kbd>+Drag = pan • Wheel = zoom</div>
-    <div>GUI (top‑right): tweak sun/IOR/thickness/waves. Toggle RGB shift + bloom.</div>
-  </div>
+<script type="module">
+  import * as THREE from 'https://unpkg.com/three@0.160.0/build/three.module.js';
+  import { OrbitControls } from 'https://unpkg.com/three@0.160.0/examples/jsm/controls/OrbitControls.js';
+  import { Sky } from 'https://unpkg.com/three@0.160.0/examples/jsm/objects/Sky.js';
+  import { Water } from 'https://unpkg.com/three@0.160.0/examples/jsm/objects/Water.js';
+  import { EffectComposer } from 'https://unpkg.com/three@0.160.0/examples/jsm/postprocessing/EffectComposer.js';
+  import { RenderPass } from 'https://unpkg.com/three@0.160.0/examples/jsm/postprocessing/RenderPass.js';
+  import { UnrealBloomPass } from 'https://unpkg.com/three@0.160.0/examples/jsm/postprocessing/UnrealBloomPass.js';
+  import { ShaderPass } from 'https://unpkg.com/three@0.160.0/examples/jsm/postprocessing/ShaderPass.js';
+  import { RGBShiftShader } from 'https://unpkg.com/three@0.160.0/examples/jsm/shaders/RGBShiftShader.js';
+  import GUI from 'https://unpkg.com/lil-gui@0.19.2/dist/lil-gui.esm.js';
 
-  <script type="module">
-    // ——— Imports ———
-    import * as THREE from 'https://unpkg.com/three@0.160.0/build/three.module.js';
-    import { OrbitControls } from 'https://unpkg.com/three@0.160.0/examples/jsm/controls/OrbitControls.js';
-    import { Sky } from 'https://unpkg.com/three@0.160.0/examples/jsm/objects/Sky.js';
-    import { Water } from 'https://unpkg.com/three@0.160.0/examples/jsm/objects/Water.js';
-    import { EffectComposer } from 'https://unpkg.com/three@0.160.0/examples/jsm/postprocessing/EffectComposer.js';
-    import { RenderPass } from 'https://unpkg.com/three@0.160.0/examples/jsm/postprocessing/RenderPass.js';
-    import { UnrealBloomPass } from 'https://unpkg.com/three@0.160.0/examples/jsm/postprocessing/UnrealBloomPass.js';
-    import { ShaderPass } from 'https://unpkg.com/three@0.160.0/examples/jsm/postprocessing/ShaderPass.js';
-    import { RGBShiftShader } from 'https://unpkg.com/three@0.160.0/examples/jsm/shaders/RGBShiftShader.js';
-    import GUI from 'https://unpkg.com/lil-gui@0.19.2/dist/lil-gui.esm.js';
+  // --- Scene Setup ---
+  const scene = new THREE.Scene();
+  const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
+  camera.position.set(0, 2, 5);
 
-    // ——— Renderer ———
-    const container = document.getElementById('app');
-    const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  const renderer = new THREE.WebGLRenderer({ antialias: true });
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  renderer.setPixelRatio(window.devicePixelRatio);
+  document.body.appendChild(renderer.domElement);
+
+  const controls = new OrbitControls(camera, renderer.domElement);
+  controls.enableDamping = true;
+
+  // --- Sky ---
+  const sky = new Sky();
+  sky.scale.setScalar(10000);
+  scene.add(sky);
+  const sun = new THREE.Vector3();
+  const skyUniforms = sky.material.uniforms;
+  skyUniforms["turbidity"].value = 10;
+  skyUniforms["rayleigh"].value = 2;
+  skyUniforms["mieCoefficient"].value = 0.005;
+  skyUniforms["mieDirectionalG"].value = 0.8;
+  const phi = THREE.MathUtils.degToRad(80);
+  const theta = THREE.MathUtils.degToRad(180);
+  sun.setFromSphericalCoords(1, phi, theta);
+  sky.material.uniforms["sunPosition"].value.copy(sun);
+
+  // --- Water ---
+  const waterGeometry = new THREE.PlaneGeometry(100, 100);
+  const water = new Water(waterGeometry, {
+    textureWidth: 512,
+    textureHeight: 512,
+    waterNormals: new THREE.TextureLoader().load('https://threejs.org/examples/textures/waternormals.jpg', texture => { texture.wrapS = texture.wrapT = THREE.RepeatWrapping; }),
+    sunDirection: new THREE.Vector3(),
+    sunColor: 0xffffff,
+    waterColor: 0x001e0f,
+    distortionScale: 3.7,
+    fog: scene.fog !== undefined
+  });
+  water.rotation.x = -Math.PI / 2;
+  scene.add(water);
+
+  // --- Glass ---
+  const glassGeometry = new THREE.SphereGeometry(1, 64, 64);
+  const glassMaterial = new THREE.MeshPhysicalMaterial({
+    transmission: 1.0,
+    thickness: 0.5,
+    roughness: 0.05,
+    metalness: 0,
+    ior: 1.52,
+    reflectivity: 0.9,
+    clearcoat: 1.0,
+    clearcoatRoughness: 0.1
+  });
+  const glassMesh = new THREE.Mesh(glassGeometry, glassMaterial);
+  glassMesh.position.y = 1;
+  scene.add(glassMesh);
+
+  // --- Post-processing ---
+  const composer = new EffectComposer(renderer);
+  composer.addPass(new RenderPass(scene, camera));
+  const bloomPass = new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 0.3, 0.4, 0.85);
+  composer.addPass(bloomPass);
+  const rgbShiftPass = new ShaderPass(RGBShiftShader);
+  rgbShiftPass.uniforms['amount'].value = 0.0015;
+  composer.addPass(rgbShiftPass);
+
+  // --- GUI ---
+  const gui = new GUI();
+  gui.add(glassMaterial, 'ior', 1.0, 2.5, 0.01);
+  gui.add(glassMaterial, 'thickness', 0.1, 2.0, 0.01);
+  gui.add(glassMaterial, 'roughness', 0, 1, 0.01);
+
+  window.addEventListener('resize', () => {
+    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.updateProjectionMatrix();
     renderer.setSize(window.innerWidth, window.innerHeight);
-    renderer.outputColorSpace = THREE.SRGBColorSpace;
-    renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    renderer.toneMappingExposure = 1.15;
-    renderer.shadowMap.enabled = true;
-    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-    container.appendChild(renderer.domElement);
+    composer.setSize(window.innerWidth, window.innerHeight);
+  });
 
-    // ——— Scene & Camera ———
-    const scene = new THREE.Scene();
-    const camera = new THREE.PerspectiveCamera(55, window.innerWidth / window.innerHeight, 0.1, 5000);
-    camera.position.set(-20, 12, 26);
-
-    const controls = new OrbitControls(camera, renderer.domElement);
-    controls.enableDamping = true;
-    controls.dampingFactor = 0.05;
-    controls.maxPolarAngle = Math.PI * 0.49; // don't go under the water
-
-    // ——— Environment: Physical Sky + PMREM ———
-    const sky = new Sky();
-    sky.scale.setScalar(10000);
-    scene.add(sky);
-
-    const skyUniforms = sky.material.uniforms;
-    // Default clear day
-    skyUniforms['turbidity'].value = 2;
-    skyUniforms['rayleigh'].value = 2.5;
-    skyUniforms['mieCoefficient'].value = 0.005;
-    skyUniforms['mieDirectionalG'].value = 0.8;
-
-    const sun = new THREE.Vector3();
-
-    const pmrem = new THREE.PMREMGenerator(renderer);
-    pmrem.compileEquirectangularShader();
-
-    function updateSun(elevation = 20, azimuth = 135) {
-      const phi = THREE.MathUtils.degToRad(90 - elevation);
-      const theta = THREE.MathUtils.degToRad(azimuth);
-      sun.setFromSphericalCoords(1, phi, theta);
-      sky.material.uniforms['sunPosition'].value.copy(sun);
-      if (water) water.material.uniforms['sunDirection'].value.copy(sun).normalize();
-      // Rebuild env map from the sky for physically‑based reflections
-      const renderTarget = pmrem.fromScene(sky);
-      scene.environment = renderTarget.texture;
-      scene.background = renderTarget.texture;
-      // Clean older targets
-      if (updateSun._lastTarget && updateSun._lastTarget !== renderTarget) updateSun._lastTarget.dispose();
-      updateSun._lastTarget = renderTarget;
-    }
-
-    // ——— Water ———
-    const waterNormalsUrl = 'https://unpkg.com/three@0.160.0/examples/textures/waternormals.jpg';
-    const waterGeometry = new THREE.PlaneGeometry(10000, 10000);
-    const waterNormals = new THREE.TextureLoader().load(waterNormalsUrl, tex => {
-      tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
-    });
-
-    const water = new Water(waterGeometry, {
-      textureWidth: 1024,
-      textureHeight: 1024,
-      waterNormals,
-      sunDirection: new THREE.Vector3(),
-      sunColor: 0xffffff,
-      waterColor: 0x0b4d5c,
-      distortionScale: 3.4,
-      fog: false,
-      format: THREE.RGBAFormat
-    });
-    water.rotation.x = -Math.PI / 2;
-    scene.add(water);
-
-    // ——— Submerged "seafloor" for depth cues ———
-    const floor = new THREE.Mesh(
-      new THREE.CircleGeometry(300, 64),
-      new THREE.MeshPhysicalMaterial({ color: 0x0f172a, roughness: 1, metalness: 0 })
-    );
-    floor.rotation.x = -Math.PI / 2;
-    floor.position.y = -2.5;
-    floor.receiveShadow = true;
-    scene.add(floor);
-
-    // ——— Lighting ———
-    const dirLight = new THREE.DirectionalLight(0xffffff, 1.1);
-    dirLight.position.set(10, 30, 20);
-    dirLight.castShadow = true;
-    dirLight.shadow.mapSize.set(2048, 2048);
-    dirLight.shadow.camera.near = 1;
-    dirLight.shadow.camera.far = 200;
-    scene.add(dirLight);
-
-    scene.add(new THREE.AmbientLight(0xffffff, 0.25));
-
-    // ——— Glass Material (physical, transmissive) ———
-    const glassMat = new THREE.MeshPhysicalMaterial({
-      color: 0xffffff,
-      metalness: 0,
-      roughness: 0.03,
-      transmission: 1.0,      // enables real refraction
-      thickness: 1.25,         // in world units; affects attenuation + refraction
-      ior: 1.52,               // glass IOR
-      attenuationColor: new THREE.Color(0xc4e2ff),
-      attenuationDistance: 12, // how quickly light is absorbed
-      envMapIntensity: 1.0,
-      clearcoat: 1.0,
-      clearcoatRoughness: 0.02
-    });
-
-    // ——— Geometry: multiple glass objects ———
-    const group = new THREE.Group();
-
-    const glassSphere = new THREE.Mesh(new THREE.SphereGeometry(2.1, 128, 128), glassMat.clone());
-    glassSphere.position.set(0, 2.2, 0);
-    glassSphere.castShadow = true;
-    group.add(glassSphere);
-
-    const glassTorus = new THREE.Mesh(new THREE.TorusKnotGeometry(1.2, 0.45, 256, 32, 2, 3), glassMat.clone());
-    glassTorus.position.set(-5.5, 1.8, -1.5);
-    glassTorus.rotation.x = Math.PI * 0.35;
-    glassTorus.castShadow = true;
-    group.add(glassTorus);
-
-    const glassCube = new THREE.Mesh(new THREE.BoxGeometry(2.8, 2.8, 2.8, 1, 1, 1), glassMat.clone());
-    glassCube.position.set(6, 1.6, 1.5);
-    glassCube.rotation.y = Math.PI / 4;
-    glassCube.castShadow = true;
-    group.add(glassCube);
-
-    scene.add(group);
-
-    // ——— Dynamic local reflections/refractions for glass: CubeCamera ———
-    const cubeTarget = new THREE.WebGLCubeRenderTarget(1024, {
-      type: THREE.HalfFloatType,
-      generateMipmaps: true,
-      minFilter: THREE.LinearMipmapLinearFilter,
-      encoding: THREE.SRGBColorSpace
-    });
-    const cubeCamera = new THREE.CubeCamera(0.1, 2000, cubeTarget);
-    scene.add(cubeCamera);
-
-    function updateGlassEnvMap() {
-      // Hide glass while capturing env to avoid self‑reflection artifacts
-      group.visible = false;
-      cubeCamera.position.copy(glassSphere.position);
-      cubeCamera.update(renderer, scene);
-      group.visible = true;
-      // Apply to each glass material
-      group.traverse(obj => {
-        if (obj.isMesh && obj.material && 'envMap' in obj.material) {
-          obj.material.envMap = cubeTarget.texture;
-          obj.material.needsUpdate = true;
-        }
-      });
-    }
-
-    // ——— Post‑processing (optional, for "cinematic" look) ———
-    const composer = new EffectComposer(renderer);
-    const renderPass = new RenderPass(scene, camera);
-    composer.addPass(renderPass);
-
-    const bloomPass = new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 0.15, 0.4, 0.85);
-    bloomPass.enabled = true;
-    composer.addPass(bloomPass);
-
-    const rgbShiftPass = new ShaderPass(RGBShiftShader);
-    rgbShiftPass.enabled = false; // can simulate subtle dispersion
-    rgbShiftPass.uniforms['amount'].value = 0.0012; // subtle
-    composer.addPass(rgbShiftPass);
-
-    // ——— GUI ———
-    const gui = new GUI({ title: 'Renderer Controls' });
-    const params = {
-      elevation: 20,
-      azimuth: 135,
-      ior: 1.52,
-      thickness: 1.25,
-      roughness: 0.03,
-      transmission: 1.0,
-      attenuationDistance: 12,
-      waterColor: '#0b4d5c',
-      waveScale: 3.4,
-      waterFlow: 0.03,
-      bloom: 0.15,
-      rgbShift: false
-    };
-
-    const gSun = gui.addFolder('Sun & Sky');
-    gSun.add(params, 'elevation', 0, 90, 0.1).onChange(() => updateSun(params.elevation, params.azimuth));
-    gSun.add(params, 'azimuth', 0, 360, 0.1).onChange(() => updateSun(params.elevation, params.azimuth));
-    gSun.close();
-
-    const gGlass = gui.addFolder('Glass');
-    gGlass.add(params, 'ior', 1.0, 2.333, 0.001).name('IOR').onChange(v => {
-      group.traverse(o => o.material && (o.material.ior = v));
-    });
-    gGlass.add(params, 'thickness', 0.01, 5, 0.01).onChange(v => {
-      group.traverse(o => o.material && (o.material.thickness = v));
-    });
-    gGlass.add(params, 'roughness', 0, 0.5, 0.001).onChange(v => {
-      group.traverse(o => o.material && (o.material.roughness = v));
-    });
-    gGlass.add(params, 'transmission', 0, 1, 0.01).onChange(v => {
-      group.traverse(o => o.material && (o.material.transmission = v));
-    });
-    gGlass.addColor(params, 'waterColor').name('Absorption Tint').onChange(v => {
-      group.traverse(o => o.material && (o.material.attenuationColor = new THREE.Color(v)));
-    });
-    gGlass.add(params, 'attenuationDistance', 0.1, 50, 0.1).onChange(v => {
-      group.traverse(o => o.material && (o.material.attenuationDistance = v));
-    });
-    gGlass.close();
-
-    const gWater = gui.addFolder('Water');
-    gWater.addColor(params, 'waterColor').name('Water Color').onChange(v => {
-      water.material.uniforms[ 'waterColor' ].value.set(v);
-    });
-    gWater.add(params, 'waveScale', 0, 10, 0.01).name('Distortion Scale').onChange(v => {
-      water.material.uniforms[ 'distortionScale' ].value = v;
-    });
-    gWater.add(params, 'waterFlow', 0, 0.2, 0.001).name('Flow Rate');
-    gWater.close();
-
-    const gPost = gui.addFolder('Post‑FX');
-    gPost.add(bloomPass, 'enabled').name('Bloom Enabled');
-    gPost.add(params, 'bloom', 0, 1, 0.01).name('Bloom Strength').onChange(v => bloomPass.strength = v);
-    gPost.add(rgbShiftPass, 'enabled').name('RGB Shift');
-    gPost.add(rgbShiftPass.uniforms['amount'], 'value', 0, 0.01, 0.0001).name('RGB Amount');
-    gPost.close();
-
-    // ——— Animate ———
-    let lastTime = performance.now();
-
-    function animate() {
-      requestAnimationFrame(animate);
-      const now = performance.now();
-      const dt = (now - lastTime) / 1000;
-      lastTime = now;
-
-      // Gentle motion for interest
-      glassTorus.rotation.y += 0.25 * dt;
-      glassCube.rotation.x += 0.12 * dt;
-      glassCube.rotation.y -= 0.2 * dt;
-
-      // Water time uniform drives waves
-      water.material.uniforms['time'].value += params.waterFlow * dt * 60.0; // scale to taste
-
-      // Update the local env map for accurate nearby reflections/refractions
-      updateGlassEnvMap();
-
-      controls.update();
-      composer.render();
-    }
-
-    // ——— Init ———
-    updateSun(params.elevation, params.azimuth);
-    updateGlassEnvMap();
-    animate();
-
-    // ——— Handle Resizes ———
-    window.addEventListener('resize', onWindowResize);
-    function onWindowResize() {
-      camera.aspect = window.innerWidth / window.innerHeight;
-      camera.updateProjectionMatrix();
-      renderer.setSize(window.innerWidth, window.innerHeight);
-      composer.setSize(window.innerWidth, window.innerHeight);
-    }
-
-    // ——— Quality toggle (helpful on slower machines) ———
-    window.addEventListener('keydown', (e) => {
-      if (e.key.toLowerCase() === 'q') {
-        const low = renderer.getPixelRatio() > 1;
-        renderer.setPixelRatio(low ? 1 : Math.min(window.devicePixelRatio, 2));
-      }
-    });
-  </script>
+  function animate() {
+    requestAnimationFrame(animate);
+    water.material.uniforms["time"].value += 1.0 / 60.0;
+    controls.update();
+    composer.render();
+  }
+  animate();
+</script>
 </body>
 </html>
